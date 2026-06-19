@@ -1,8 +1,7 @@
 /**
- * WhatsApp Group Contact Extractor (Instant & Reliable LocalAuth Version)
- * * Is version mein Google Chrome lock hone ka koi jhanjhat nahi hai!
- * * Yeh ek isolated browser use karta hai aur aapka session '.wwebjs_auth' folder mein save rakhta hai.
- * * Aapko sirf ek baar QR Code scan karna hoga, uske baad hamesha auto-login ho jayega.
+ * WhatsApp Group Contact Extractor (Self-Healing Cloud & LocalAuth Version)
+ * * Is version mein cloud hosting (jaise Render) par missing Chrome binary ki error automatically handle ho jati hai.
+ * * Yeh bootup par automatically Puppeteer Chrome download kar leta hai agar woh missing ho.
  * * * Kaise chalayein:
  * 1. Terminal mein dependencies install karein:
  * npm install express socket.io whatsapp-web.js qrcode
@@ -17,6 +16,9 @@ const { Server } = require('socket.io');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const QRCode = require('qrcode');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { execSync } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -65,7 +67,7 @@ client.on('qr', (qr) => {
     latestQrCode = qr;
     addLog('Naya QR Code taiyar hai! Kripya screen par scan karein.', 'warning');
     
-    QRCode.toDataURL(qr, (err, url) => {
+    QRCode.toToDataURL = QRCode.toDataURL(qr, (err, url) => {
         if (!err) {
             io.emit('qr', url);
         }
@@ -237,7 +239,7 @@ app.get('/', (req, res) => {
                 <div id="general-loader" class="bg-slate-900/60 border border-slate-800 p-8 rounded-2xl text-center shadow-2xl">
                     <div class="animate-spin rounded-full h-12 w-12 border-4 border-slate-800 border-t-emerald-500 mb-6 mx-auto"></div>
                     <p id="loader-message" class="text-base font-semibold text-emerald-400">Headless browser start ho raha hai...</p>
-                    <p class="text-xs text-slate-500 mt-2">Pehli baar startup mein thoda samay lag sakta hai, kripya intezar karein.</p>
+                    <p class="text-xs text-slate-500 mt-2 font-mono">Cloud deployments (like Render) can take up to 1-2 minutes to download Chrome on initial boot.</p>
                 </div>
 
                 <!-- 2. QR Code Scanner Card -->
@@ -455,19 +457,33 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Setup Initial log logs
+// Setup Initial logs & Auto-Install Chrome if missing
 console.log('=== INSTANT WA EXTRACTOR SYSTEM STARTING ===');
-addLog('System initial bootup completed.', 'info');
-addLog('LocalAuth path check: checking ./.wwebjs_auth directory...', 'info');
 
-client.initialize()
-    .then(() => {
-        addLog('Background Puppeteer Client successfully start ho gaya hai.', 'info');
-    })
-    .catch(err => {
-        addLog(`System launch error: ${err.message}`, 'error');
-    });
-
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
     addLog(`Server successfully chalu ho gaya! Link: http://localhost:${PORT}`, 'success');
+    addLog('System initial bootup completed.', 'info');
+    addLog('LocalAuth path check: checking ./.wwebjs_auth directory...', 'info');
+
+    // Puppeteer browser dependency check for cloud services like Render
+    try {
+        addLog('Verifying browser dependencies...', 'info');
+        // If running in Render environment or if cache is missing, trigger direct download
+        if (process.env.RENDER || process.env.PORT || !fs.existsSync(path.join(os.homedir(), '.cache', 'puppeteer'))) {
+            addLog('Downloading Puppeteer browser dependencies in background. Please wait...', 'warning');
+            execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
+            addLog('Browser binary downloaded and configured successfully!', 'success');
+        }
+    } catch (installError) {
+        addLog(`Could not auto-install Chrome binary: ${installError.message}. App will fall back to platform defaults.`, 'error');
+    }
+
+    addLog('Starting headless Chromium instance...', 'info');
+    client.initialize()
+        .then(() => {
+            addLog('Background Puppeteer Client successfully start ho gaya hai.', 'info');
+        })
+        .catch(err => {
+            addLog(`System launch error: ${err.message}`, 'error');
+        });
 });
