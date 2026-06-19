@@ -1,140 +1,142 @@
 /**
- * WhatsApp Group Contact Extractor (Direct Chrome Session Sync)
- * * * Yeh tool aapke local Google Chrome ke logged-in WhatsApp session ko seedhe use karega.
- * * Kisi naye QR code ko scan karne ki zaroorat nahi padegi!
+ * WhatsApp Group Contact Extractor (Instant & Reliable LocalAuth Version)
+ * * Is version mein Google Chrome lock hone ka koi jhanjhat nahi hai!
+ * * Yeh ek isolated browser use karta hai aur aapka session '.wwebjs_auth' folder mein save rakhta hai.
+ * * Aapko sirf ek baar QR Code scan karna hoga, uske baad hamesha auto-login ho jayega.
  * * * Kaise chalayein:
- * 1. Apne computer ka chal raha Google Chrome browser poori tarah band (close) kar dein 
- * (Kyunki Chrome ek time par ek hi jagah profile lock allow karta hai).
- * 2. Terminal mein run karein:
+ * 1. Terminal mein dependencies install karein:
+ * npm install express socket.io whatsapp-web.js qrcode
+ * 2. Run karein:
  * node index.js
- * 3. Browser mein http://localhost:3000 kholein. Aapka session pehle se connected dikhayega!
+ * 3. Browser mein http://localhost:3000 kholein aur instant maza lein!
  */
 
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { Client } = require('whatsapp-web.js');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const QRCode = require('qrcode');
 const path = require('path');
-const os = require('os');
-const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
-// 1. Aapke System ke hisab se Chrome ka User Data Path dhoondhne ka function
-function getChromeUserDataPath() {
-    const home = os.homedir();
-    if (process.platform === 'win32') {
-        return path.join(home, 'AppData', 'Local', 'Google', 'Chrome', 'User Data');
-    } else if (process.platform === 'darwin') {
-        return path.join(home, 'Library', 'Application Support', 'Google', 'Chrome');
-    } else {
-        return path.join(home, '.config', 'google-chrome');
-    }
-}
-
-// 2. Chrome ke Application executable ki location dhoondhna
-function getChromeExecutablePath() {
-    if (process.platform === 'win32') {
-        // Standard Windows 64-bit Chrome path
-        return 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-    } else if (process.platform === 'darwin') {
-        // macOS Chrome path
-        return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    } else {
-        // Linux Chrome path
-        return '/usr/bin/google-chrome';
-    }
-}
-
-const chromeDataPath = getChromeUserDataPath();
-const chromeExePath = getChromeExecutablePath();
-
-console.log('=== SYSTEM DETAILS ===');
-console.log(`-> Detecting Chrome Profile Path: ${chromeDataPath}`);
-console.log(`-> Detecting Chrome Executable: ${chromeExePath}`);
-
-let currentStatus = 'Chrome Session se connect ho raha hai...';
-let activeGroups = [];
-
-// WhatsApp Client setup jo aapke Google Chrome ki Default Profile ko launch karega
+// WhatsApp Client setup (LocalAuth use kar rahe hain taaki session safe aur persistent rahe)
 const client = new Client({
-    // Hum Default Google Chrome profile directory use kar rahe hain jahan session saved hai
+    authStrategy: new LocalAuth({
+        dataPath: './.wwebjs_auth' // Session data isi folder me save rahega
+    }),
     puppeteer: {
-        headless: true, // Agar aap dekhna chahte hain ki peeche kya chal raha hai, toh ise false kar sakte hain
-        executablePath: chromeExePath,
-        userDataDir: chromeDataPath,
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--profile-directory=Default', // Aapka default login profile
-            '--disable-gpu',
-            '--disable-extensions'
+            '--disable-gpu'
         ]
     }
 });
 
-// Status helper
+let currentStatus = 'Initializing...';
+let liveLogs = [];
+let latestQrCode = null;
+let activeGroups = [];
+
+// Status aur Logs ko manage karne ka helper function
+function addLog(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    const formattedLog = { id: Date.now() + Math.random(), timestamp, message, type };
+    liveLogs.push(formattedLog);
+    if (liveLogs.length > 50) liveLogs.shift(); // Max 50 logs save rakhein
+    io.emit('log', formattedLog);
+    console.log(`[${timestamp}] ${message}`);
+}
+
 function updateStatus(newStatus) {
     currentStatus = newStatus;
-    console.log(`[STATUS]: ${newStatus}`);
     io.emit('status', currentStatus);
 }
 
-// WhatsApp Events
+// WhatsApp Client Ke Events
+client.on('qr', (qr) => {
+    updateStatus('Scan QR Code');
+    latestQrCode = qr;
+    addLog('Naya QR Code taiyar hai! Kripya screen par scan karein.', 'warning');
+    
+    QRCode.toDataURL(qr, (err, url) => {
+        if (!err) {
+            io.emit('qr', url);
+        }
+    });
+});
+
+client.on('loading_screen', (percent, message) => {
+    updateStatus(`Sync ho raha hai...`);
+    addLog(`WhatsApp loading screen: ${percent}% - ${message || 'Data sync ho raha hai'}`, 'info');
+});
+
+client.on('authenticated', () => {
+    updateStatus('Authenticated');
+    latestQrCode = null;
+    addLog('Authentication safal rhi! Session save kar liya gaya hai.', 'success');
+});
+
+client.on('auth_failure', (msg) => {
+    updateStatus('Authentication Failed');
+    addLog(`Login fail ho gaya: ${msg}. Kripya firse koshish karein.`, 'error');
+});
+
 client.on('ready', async () => {
     updateStatus('Connected Hain');
-    console.log('=== SUCCESS: Aapke Chrome Session se WhatsApp successfully connect ho gaya! ===');
+    latestQrCode = null;
+    addLog('WhatsApp Client completely Ready ho chuka hai!', 'success');
 
     try {
-        console.log('Groups list fetch ki ja rahi hai...');
+        addLog('Aapke chat list se WhatsApp Groups dhoondhe ja rahe hain...', 'info');
         const chats = await client.getChats();
         activeGroups = chats
             .filter(chat => chat.isGroup)
             .map(chat => ({
                 id: chat.id._serialized,
-                name: chat.name || 'Bina Naam Ka Group',
+                name: chat.name || 'Unnamed Group',
                 unreadCount: chat.unreadCount
             }));
         
-        console.log(`Total ${activeGroups.length} groups mile!`);
+        addLog(`Safaltapoorvak ${activeGroups.length} groups mil gaye hain!`, 'success');
         io.emit('groups', activeGroups);
     } catch (err) {
-        console.error('Groups fetch karne mein error:', err);
+        addLog(`Groups fetch karne mein dikkat aayi: ${err.message}`, 'error');
         io.emit('error', 'Groups load nahi ho paye. Kripya page refresh karein.');
     }
 });
 
-// Agar scan ki zaroorat pad jaye (in case Chrome me login na ho)
-client.on('qr', (qr) => {
-    updateStatus('Error: Chrome me WhatsApp logged in nahi hai! Kripya pehle apne browser me web.whatsapp.com open karke login karein.');
-    console.log('--- WARNING: Chrome mein login session nahi mila! Browser mein jaakar manual login karein. ---');
-});
-
-client.on('loading_screen', (percent, message) => {
-    updateStatus(`WhatsApp Web Sync ho raha hai: ${percent}%`);
-});
-
 client.on('disconnected', (reason) => {
-    activeGroups = [];
     updateStatus('Disconnected');
-    console.log('Session disconnect ho gaya:', reason);
+    latestQrCode = null;
+    activeGroups = [];
+    addLog(`WhatsApp disconnect ho gaya. Reason: ${reason}`, 'error');
 });
 
-// Socket.io real-time connection
+// Real-time WebSocket connection handling
 io.on('connection', (socket) => {
-    console.log(`User connected on UI | ID: ${socket.id}`);
+    // Naye user ko current state aur purane logs send karein
     socket.emit('status', currentStatus);
+    socket.emit('logs_history', liveLogs);
+    
+    if (latestQrCode && currentStatus === 'Scan QR Code') {
+        QRCode.toDataURL(latestQrCode, (err, url) => {
+            if (!err) socket.emit('qr', url);
+        });
+    }
     
     if (activeGroups.length > 0) {
         socket.emit('groups', activeGroups);
     }
 });
 
-// CSV Export API Endpoint
+// CSV Extraction API Endpoint
 app.get('/api/export/:groupId', async (req, res) => {
     try {
         if (currentStatus !== 'Connected Hain') {
@@ -142,7 +144,7 @@ app.get('/api/export/:groupId', async (req, res) => {
         }
 
         const groupId = req.params.groupId;
-        console.log(`Extracting: ${groupId}`);
+        addLog(`Group ID ke contacts extract ho rahe hain: ${groupId}`, 'info');
 
         const chat = await client.getChatById(groupId);
         if (!chat.isGroup) {
@@ -152,13 +154,13 @@ app.get('/api/export/:groupId', async (req, res) => {
         let csvRows = ['Phone Number,Formatted ID,Display Name,Role\n'];
 
         for (const participant of chat.participants) {
-            // Get Contact details gracefully
             const contact = await client.getContactById(participant.id._serialized);
             const rawNumber = participant.id.user;
             const serializedId = participant.id._serialized;
             const displayName = contact.pushname || contact.name || 'Unknown Contact';
             const isAdmin = participant.isAdmin || participant.isSuperAdmin ? 'Admin' : 'Member';
 
+            // Special characters and commas escape karne ke liye double quotes lagayein
             const escapedName = `"${displayName.replace(/"/g, '""')}"`;
             csvRows.push(`${rawNumber},${serializedId},${escapedName},${isAdmin}\n`);
         }
@@ -167,17 +169,19 @@ app.get('/api/export/:groupId', async (req, res) => {
             .replace(/[^a-z0-9]/gi, '_')
             .toLowerCase();
 
+        addLog(`Group "${chat.name}" ke ${chat.participants.length} contacts successfully export ho gaye!`, 'success');
+
         res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}_contacts.csv"`);
         res.send(csvRows.join(''));
 
     } catch (err) {
-        console.error('Export fail ho gaya:', err);
-        res.status(500).send('Error: ' + err.message);
+        addLog(`Export fail ho gaya: ${err.message}`, 'error');
+        res.status(500).send('Error generating CSV: ' + err.message);
     }
 });
 
-// Embedded HTML UI
+// UI Delivery
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
@@ -185,7 +189,7 @@ app.get('/', (req, res) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>WA Sync Extractor</title>
+        <title>Instant WA Contact Extractor</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <script src="/socket.io/socket.io.js"></script>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -196,81 +200,112 @@ app.get('/', (req, res) => {
         <header class="border-b border-slate-800 bg-slate-900/40 backdrop-blur sticky top-0 z-50">
             <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
                 <div class="flex items-center space-x-3">
-                    <div class="bg-emerald-500 p-2 rounded-xl text-slate-950 flex items-center justify-center">
-                        <i class="fa-solid fa-bolt text-xl"></i>
+                    <div class="bg-emerald-500 p-2 rounded-xl text-slate-950 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <i class="fa-solid fa-bolt-lightning text-xl"></i>
                     </div>
                     <div>
-                        <h1 class="text-lg font-bold tracking-tight">Direct WA Extporter</h1>
-                        <p class="text-xs text-slate-400">Chrome Session se Auto-Sync</p>
+                        <h1 class="text-lg font-bold tracking-tight">Direct WA Extractor</h1>
+                        <p class="text-xs text-slate-400">Instant & Reliable Session Sync</p>
                     </div>
                 </div>
                 
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-2 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
                     <span class="relative flex h-3 w-3">
                         <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"></span>
                         <span id="status-dot" class="relative inline-flex rounded-full h-3 w-3"></span>
                     </span>
-                    <span id="status-text" class="text-sm font-semibold tracking-wide">Sync ho raha hai...</span>
+                    <span id="status-text" class="text-xs font-semibold tracking-wide">Syncing...</span>
                 </div>
             </div>
         </header>
 
-        <!-- Main Body -->
-        <main class="flex-grow max-w-4xl w-full mx-auto p-4 flex flex-col items-center justify-center my-6">
+        <!-- Main Workspace -->
+        <main class="flex-grow max-w-4xl w-full mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-6 my-6 items-start">
             
-            <!-- Error Notification Alert -->
-            <div id="error-alert" class="hidden w-full mb-6 bg-red-950/60 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-start space-x-3 shadow-lg">
-                <i class="fa-solid fa-triangle-exclamation mt-1 text-red-400 text-lg"></i>
-                <div class="flex-grow">
-                    <p class="font-bold text-sm text-red-300">Synchronization Error</p>
-                    <p id="error-message" class="text-xs text-slate-300 mt-1"></p>
-                </div>
-                <button onclick="this.parentElement.classList.add('hidden')" class="text-red-400 hover:text-red-200">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-
-            <!-- Loader Screen (While Connecting) -->
-            <div id="general-loader" class="flex flex-col items-center bg-slate-900/60 border border-slate-800/80 p-8 rounded-2xl max-w-md w-full text-center shadow-2xl">
-                <div class="animate-spin rounded-full h-12 w-12 border-4 border-slate-800 border-t-emerald-500 mb-6"></div>
-                <p id="loader-message" class="text-base font-semibold text-emerald-400">Chrome profile dhoondhi ja rahi hai...</p>
-                
-                <div class="mt-6 text-left text-xs text-slate-400 space-y-2 border-t border-slate-800/80 pt-4 w-full">
-                    <p class="font-bold text-slate-300 text-center mb-1">Zaroori Instructions:</p>
-                    <p><i class="fa-solid fa-circle text-[6px] text-emerald-500 mr-1.5 align-middle"></i> Apne computer ka <b>Google Chrome</b> browser poori tarah band karein.</p>
-                    <p><i class="fa-solid fa-circle text-[6px] text-emerald-500 mr-1.5 align-middle"></i> Agar Chrome chal raha hoga, toh terminal pe "Profile locked" ki error aayegi.</p>
-                </div>
-            </div>
-
-            <!-- Dashboard Panel (Once connected) -->
-            <div id="action-panel" class="hidden w-full bg-slate-900/80 border border-slate-800 rounded-2xl p-6 md:p-8 backdrop-blur shadow-2xl">
-                <div class="pb-6 border-b border-slate-800 mb-6">
-                    <h2 class="text-2xl font-bold flex items-center space-x-2 text-emerald-400">
-                        <i class="fa-solid fa-circle-check text-2xl"></i>
-                        <span>Chrome Session Connected!</span>
-                    </h2>
-                    <p class="text-slate-400 text-sm mt-1">Aapke local Chrome browser ka account sync ho chuka hai. Kisi QR code ko scan karne ki zaroorat nahi hai.</p>
+            <!-- Left/Center Action Panel (Depends on State) -->
+            <div class="md:col-span-2 space-y-6">
+                <!-- Error Notice -->
+                <div id="error-alert" class="hidden bg-red-950/60 border border-red-500/50 text-red-200 p-4 rounded-xl flex items-start space-x-3 shadow-lg">
+                    <i class="fa-solid fa-triangle-exclamation mt-1 text-red-400"></i>
+                    <div class="flex-grow">
+                        <p class="font-bold text-sm text-red-300">Sync Problem</p>
+                        <p id="error-message" class="text-xs text-slate-300 mt-1"></p>
+                    </div>
                 </div>
 
-                <!-- Main controls -->
-                <div class="space-y-6">
-                    <div>
-                        <label for="group-selector" class="block text-sm font-semibold mb-2 text-slate-300">Target WhatsApp Group Select Karein</label>
-                        <div class="relative">
-                            <select id="group-selector" class="w-full bg-slate-950/80 border border-slate-800 text-slate-100 rounded-xl px-4 py-3.5 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition cursor-pointer">
-                                <option value="" disabled selected>-- Groups load ho rahe hain... --</option>
-                            </select>
-                            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
-                                <i class="fa-solid fa-chevron-down text-sm"></i>
-                            </div>
+                <!-- 1. General Loading Card (While server starts browser) -->
+                <div id="general-loader" class="bg-slate-900/60 border border-slate-800 p-8 rounded-2xl text-center shadow-2xl">
+                    <div class="animate-spin rounded-full h-12 w-12 border-4 border-slate-800 border-t-emerald-500 mb-6 mx-auto"></div>
+                    <p id="loader-message" class="text-base font-semibold text-emerald-400">Headless browser start ho raha hai...</p>
+                    <p class="text-xs text-slate-500 mt-2">Pehli baar startup mein thoda samay lag sakta hai, kripya intezar karein.</p>
+                </div>
+
+                <!-- 2. QR Code Scanner Card -->
+                <div id="qr-panel" class="hidden bg-slate-900/60 border border-slate-800 p-8 rounded-2xl text-center shadow-2xl">
+                    <h3 class="text-xl font-bold mb-2">Apna WhatsApp link karein</h3>
+                    <p class="text-sm text-slate-400 mb-6">WhatsApp Web login karne ke liye is QR code ko apne phone se scan karein.</p>
+                    
+                    <div class="bg-white p-4 rounded-2xl inline-block shadow-inner mb-6 mx-auto relative overflow-hidden">
+                        <img id="qr-image" src="" alt="Scan QR Code to login" class="w-64 h-64 object-contain mx-auto" />
+                        <div id="qr-loader" class="absolute inset-0 bg-white flex flex-col justify-center items-center">
+                            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mb-2"></div>
+                            <p class="text-xs text-slate-700 font-semibold">QR Code taiyar ho raha hai...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="text-xs text-slate-400 flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                        <span>LocalAuth session save rahega. Agli baar scan nahi karna hoga!</span>
+                    </div>
+                </div>
+
+                <!-- 3. Connected Actions Dashboard -->
+                <div id="action-panel" class="hidden bg-slate-900/60 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl">
+                    <div class="pb-6 border-b border-slate-800 mb-6 flex justify-between items-center">
+                        <div>
+                            <h2 class="text-2xl font-bold text-emerald-400 flex items-center space-x-2">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>WhatsApp Ready hai!</span>
+                            </h2>
+                            <p class="text-slate-400 text-sm mt-1">Neeche se koi bhi group select karke uske members ko CSV format me download karein.</p>
                         </div>
                     </div>
 
-                    <!-- Extraction Button -->
-                    <button id="extract-btn" onclick="startExtraction()" disabled class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 text-slate-950 font-bold py-4 rounded-xl shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 disabled:shadow-none disabled:text-slate-500 transition-all flex items-center justify-center space-x-2 text-lg">
-                        <i class="fa-solid fa-file-excel text-xl"></i>
-                        <span>Ek Click me CSV Download Karein</span>
-                    </button>
+                    <!-- Extraction controls -->
+                    <div class="space-y-6">
+                        <div>
+                            <label for="group-selector" class="block text-sm font-semibold mb-2 text-slate-300">Apna Target Group Select Karein</label>
+                            <div class="relative">
+                                <select id="group-selector" class="w-full bg-slate-950/80 border border-slate-800 text-slate-100 rounded-xl px-4 py-3.5 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition cursor-pointer">
+                                    <option value="" disabled selected>-- Groups load ho rahe hain... --</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                                    <i class="fa-solid fa-chevron-down text-sm"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Big Extraction Button -->
+                        <button id="extract-btn" onclick="startExtraction()" disabled class="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 text-slate-950 font-bold py-4 rounded-xl shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/25 disabled:shadow-none disabled:text-slate-500 transition-all flex items-center justify-center space-x-2 text-lg">
+                            <i class="fa-solid fa-file-csv text-xl"></i>
+                            <span>1-Click Me CSV Download Karein</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Terminal Log Panel -->
+            <div class="bg-slate-900/40 border border-slate-800 rounded-2xl p-4 flex flex-col h-[400px]">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                        <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>Live Status Log</span>
+                    </span>
+                    <button onclick="clearLogs()" class="text-[10px] text-slate-500 hover:text-slate-300 transition">Clear</button>
+                </div>
+                
+                <div id="logs-container" class="flex-grow overflow-y-auto space-y-2 text-xs font-mono scrollbar-thin">
+                    <!-- Logs injection target -->
                 </div>
             </div>
             
@@ -279,17 +314,21 @@ app.get('/', (req, res) => {
         <!-- Footer -->
         <footer class="border-t border-slate-900 bg-slate-950 py-4 text-center">
             <div class="max-w-4xl mx-auto px-4 text-[10px] text-slate-600">
-                <p>Ensure that you keep your system's Google Chrome closed when running the script node server.</p>
+                <p>Ensure that you keep this page open until the sync is fully finished.</p>
             </div>
         </footer>
 
-        <!-- Javascript Client logic -->
+        <!-- Javascript Client Logic -->
         <script>
             const socket = io();
 
             const statusText = document.getElementById('status-text');
             const statusDot = document.getElementById('status-dot');
             const statusPing = document.getElementById('status-ping');
+            
+            const qrPanel = document.getElementById('qr-panel');
+            const qrImage = document.getElementById('qr-image');
+            const qrLoader = document.getElementById('qr-loader');
             
             const actionPanel = document.getElementById('action-panel');
             const groupSelector = document.getElementById('group-selector');
@@ -300,15 +339,51 @@ app.get('/', (req, res) => {
             
             const errorAlert = document.getElementById('error-alert');
             const errorMessage = document.getElementById('error-message');
+            const logsContainer = document.getElementById('logs-container');
 
+            // Logs handling
+            function renderLog(log) {
+                const logDiv = document.createElement('div');
+                logDiv.className = 'p-2 rounded bg-slate-950/40 border border-slate-900/50 leading-relaxed';
+                
+                let textColor = 'text-slate-300';
+                if (log.type === 'success') textColor = 'text-emerald-400';
+                if (log.type === 'warning') textColor = 'text-amber-400';
+                if (log.type === 'error') textColor = 'text-red-400';
+
+                logDiv.innerHTML = \`<span class="text-slate-500">[\${log.timestamp}]</span> <span class="\${textColor}">\${log.message}</span>\`;
+                logsContainer.appendChild(logDiv);
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+
+            socket.on('log', (log) => {
+                renderLog(log);
+            });
+
+            socket.on('logs_history', (history) => {
+                logsContainer.innerHTML = '';
+                history.forEach(renderLog);
+            });
+
+            function clearLogs() {
+                logsContainer.innerHTML = '';
+            }
+
+            // Real-time status update
             socket.on('status', (status) => {
                 statusText.innerText = status;
                 updateStatusIndicator(status);
 
-                if (status === 'Connected Hain') {
+                if (status === 'Scan QR Code') {
+                    qrPanel.classList.remove('hidden');
+                    actionPanel.classList.add('hidden');
                     generalLoader.classList.add('hidden');
+                } else if (status === 'Connected Hain') {
+                    qrPanel.classList.add('hidden');
                     actionPanel.classList.remove('hidden');
+                    generalLoader.classList.add('hidden');
                 } else {
+                    qrPanel.classList.add('hidden');
                     actionPanel.classList.add('hidden');
                     generalLoader.classList.remove('hidden');
                     loaderMessage.innerText = status;
@@ -322,7 +397,10 @@ app.get('/', (req, res) => {
                 if (status === 'Connected Hain') {
                     statusDot.classList.add('bg-emerald-500');
                     statusPing.classList.add('bg-emerald-400');
-                } else if (status.includes('Error')) {
+                } else if (status === 'Scan QR Code') {
+                    statusDot.classList.add('bg-amber-500');
+                    statusPing.classList.add('bg-amber-400');
+                } else if (status.includes('Failed') || status === 'Disconnected') {
                     statusDot.classList.add('bg-red-500');
                     statusPing.classList.add('bg-red-400');
                 } else {
@@ -331,12 +409,18 @@ app.get('/', (req, res) => {
                 }
             }
 
-            // Sync Group drop-downs
+            // Receive QR from server
+            socket.on('qr', (base64Url) => {
+                qrImage.src = base64Url;
+                qrLoader.classList.add('hidden');
+            });
+
+            // Populate group dropdown list
             socket.on('groups', (groups) => {
                 groupSelector.innerHTML = '<option value="" disabled selected>-- Apna Group select karein --</option>';
                 
                 if (groups.length === 0) {
-                    groupSelector.innerHTML = '<option value="" disabled>Aapke Chrome profile par koi groups nahi mile.</option>';
+                    groupSelector.innerHTML = '<option value="" disabled>Aapke WhatsApp par koi groups nahi mile.</option>';
                     extractBtn.disabled = true;
                     return;
                 }
@@ -371,21 +455,19 @@ app.get('/', (req, res) => {
     `);
 });
 
-// App initialization
-console.log('=== DIRECT CHROME EXTRACTOR BOOTING ===');
-console.log('1. Checking Chrome Session...');
+// Setup Initial log logs
+console.log('=== INSTANT WA EXTRACTOR SYSTEM STARTING ===');
+addLog('System initial bootup completed.', 'info');
+addLog('LocalAuth path check: checking ./.wwebjs_auth directory...', 'info');
 
 client.initialize()
     .then(() => {
-        console.log('2. System process initialized successfully.');
+        addLog('Background Puppeteer Client successfully start ho gaya hai.', 'info');
     })
     .catch(err => {
-        console.error('CRITICAL INITIALIZATION ERROR:', err.message);
-        console.log('\n======================================');
-        console.log('👉 TIP: Kripya apna normal Google Chrome browser close karein aur fir ise chalayein!');
-        console.log('======================================\n');
+        addLog(`System launch error: ${err.message}`, 'error');
     });
 
 server.listen(PORT, () => {
-    console.log(`3. Server running on: http://localhost:${PORT}`);
+    addLog(`Server successfully chalu ho gaya! Link: http://localhost:${PORT}`, 'success');
 });
