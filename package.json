@@ -1,15 +1,26 @@
 {
-  "name": "wa-extractor",
+  "name": "whatsapp-group-extractor",
   "version": "1.0.0",
-  "description": "WhatsApp Group Contact Extractor",
+  "description": "A local web server to log into WhatsApp and extract group members to CSV.",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.0",
+    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "qrcode": "^1.5.3",
-    "socket.io": "^4.7.5",
-    "whatsapp-web.js": "^1.23.0"
-  }
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.3"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "group",
+    "extractor",
+    "csv"
+  ],
+  "author": "",
+  "license": "ISC"
 }
