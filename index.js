@@ -268,7 +268,7 @@ app.get('/', (req, res) => {
                         const li = document.createElement('li');
                         li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition-colors';
                         li.innerHTML = \`
-                            <span class="font-medium text-gray-800 select-all">+\${member.id}</span>
+                            <span class="font-medium text-gray-800 select-all">\${member.id}</span>
                             \${member.isAdmin ? '<span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">Admin</span>' : ''}
                         \`;
                         list.appendChild(li);
@@ -378,12 +378,15 @@ app.get('/api/groups/:id/csv', async (req, res) => {
         let csvContent = 'Phone Number,Is Admin\n';
         
         for (let participant of groupMeta.participants) {
-            // Extract pure phone number from JID (e.g., "919999999999@s.whatsapp.net" -> "919999999999")
+            // Sirf asli whatsapp number lo, hidden (@lid) aur sub-groups (@g.us) ko ignore karo
+            if (!participant.id.includes('@s.whatsapp.net')) continue;
+
+            // Extract pure phone number from JID
             const number = participant.id.split('@')[0];
             const isAdmin = (participant.admin === 'admin' || participant.admin === 'superadmin') ? 'Yes' : 'No';
             
-            // Added a single quote (') so Excel reads it as simple text and doesn't convert to E+13
-            csvContent += `'${number},${isAdmin}\n`;
+            // Excel me format fix karne ke liye '+919999999999 likho (Single Quote ke sath)
+            csvContent += `'+${number},${isAdmin}\n`;
         }
 
         // Clean group name for a safe filename
@@ -411,10 +414,13 @@ app.get('/api/groups/:id/members', async (req, res) => {
         const groupId = req.params.id;
         const groupMeta = await sessionState.sock.groupMetadata(groupId);
         
-        const members = groupMeta.participants.map(p => ({
-            id: p.id.split('@')[0],
-            isAdmin: (p.admin === 'admin' || p.admin === 'superadmin')
-        }));
+        const members = groupMeta.participants
+            // Sirf asli whatsapp number lo, hidden (@lid) aur sub-groups ko ignore karo
+            .filter(p => p.id.includes('@s.whatsapp.net')) 
+            .map(p => ({
+                id: '+' + p.id.split('@')[0], // UI me display ke liye + laga diya
+                isAdmin: (p.admin === 'admin' || p.admin === 'superadmin')
+            }));
         
         res.json(members);
     } catch (err) {
