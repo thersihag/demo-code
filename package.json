@@ -1,25 +1,24 @@
 {
   "name": "whatsapp-group-extractor",
   "version": "1.0.0",
-  "description": "A web dashboard to extract WhatsApp group members using Baileys",
+  "description": "WhatsApp Group Members Extractor",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "nodemon index.js",
+    "test": "echo \"No test specified\""
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.0",
-    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "pino": "^9.0.0",
-    "qrcode": "^1.5.3"
+    "cors": "^2.8.5",
+    "pino": "^9.3.2",
+    "qrcode": "^1.5.4"
   },
-  "keywords": [
-    "whatsapp",
-    "baileys",
-    "extractor",
-    "groups"
-  ],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
