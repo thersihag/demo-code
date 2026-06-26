@@ -349,11 +349,14 @@ app.get('/api/groups', async (req, res) => {
         const groups = await sessionState.sock.groupFetchAllParticipating();
         
         // Format them into a clean array
-        const groupList = Object.values(groups).map(g => ({
-            id: g.id,
-            subject: g.subject,
-            size: g.participants ? g.participants.length : 0
-        })).sort((a, b) => b.size - a.size); // Sort by largest group first
+        const groupList = Object.values(groups)
+            .map(g => ({
+                id: g.id,
+                subject: g.subject,
+                size: g.participants ? g.participants.length : 0
+            }))
+            .filter(g => g.size > 1) // 👈 Hide groups with 0 or 1 members (Community duplicates)
+            .sort((a, b) => b.size - a.size); // Sort by largest group first
 
         res.json(groupList);
     } catch (err) {
