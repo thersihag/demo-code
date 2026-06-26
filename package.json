@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-group-extractor",
   "version": "1.0.0",
-  "description": "A local web server to log into WhatsApp and extract group members to CSV.",
+  "description": "A web dashboard to extract WhatsApp group members using Baileys",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -17,9 +17,8 @@
   "keywords": [
     "whatsapp",
     "baileys",
-    "group",
     "extractor",
-    "csv"
+    "groups"
   ],
   "author": "",
   "license": "ISC"
