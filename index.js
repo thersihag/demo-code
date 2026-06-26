@@ -100,35 +100,76 @@ app.get('/', (req, res) => {
         <title>WhatsApp Group Extractor</title>
         <script src="https://cdn.tailwindcss.com"></script>
     </head>
-    <body class="bg-gray-50 p-8 font-sans text-gray-800">
-        <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-lg border border-gray-100">
-            <h1 class="text-3xl font-extrabold mb-6 text-center text-green-600">WhatsApp Group Extractor</h1>
+    <body class="bg-gray-50 font-sans text-gray-800 h-screen overflow-hidden flex items-center justify-center">
+        
+        <!-- Toast Notification -->
+        <div id="toast" class="fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded shadow-lg transform transition-transform translate-x-full duration-300 z-50">Copied!</div>
+
+        <!-- Auth Section -->
+        <div id="auth-section" class="max-w-xl w-full bg-white p-8 rounded-xl shadow-lg border border-gray-100 text-center flex flex-col items-center transition-all">
+            <h1 class="text-3xl font-extrabold mb-6 text-green-600">WhatsApp Login</h1>
+            <h2 id="status-text" class="text-lg font-semibold text-gray-700 mb-4 bg-gray-100 px-4 py-2 rounded-full inline-block">Checking connection status...</h2>
+            <div id="qr-container" class="hidden">
+                <p class="text-sm text-gray-500 mb-2">Scan this QR code with your WhatsApp to login</p>
+                <img id="qr-image" src="" alt="QR Code" class="mx-auto w-72 h-72 border-4 border-gray-100 rounded-lg shadow-sm">
+            </div>
+        </div>
+
+        <!-- Main UI (Hidden until connected) -->
+        <div id="main-ui" class="hidden w-full h-full flex">
             
-            <!-- Auth & Status Section -->
-            <div id="auth-section" class="text-center flex flex-col items-center">
-                <h2 id="status-text" class="text-lg font-semibold text-gray-700 mb-4 bg-gray-100 px-4 py-2 rounded-full inline-block">Checking connection status...</h2>
-                <div id="qr-container" class="hidden">
-                    <p class="text-sm text-gray-500 mb-2">Scan this QR code with your WhatsApp to login</p>
-                    <img id="qr-image" src="" alt="QR Code" class="mx-auto w-72 h-72 border-4 border-gray-100 rounded-lg shadow-sm">
+            <!-- Left Panel: Groups List -->
+            <div class="w-1/3 bg-white border-r border-gray-200 flex flex-col h-full shadow-md z-10">
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-gray-800">Your Groups</h2>
+                    <span id="group-count" class="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded-full">0</span>
+                </div>
+                <div id="loading-groups" class="text-center text-gray-500 py-4 hidden">Fetching groups...</div>
+                <div id="groups-list" class="overflow-y-auto flex-1 p-2 space-y-2">
+                    <!-- Groups populate here -->
                 </div>
             </div>
 
-            <!-- Groups Section -->
-            <div id="groups-section" class="hidden mt-8">
-                <div class="flex justify-between items-center mb-6 border-b pb-4">
-                    <h2 class="text-2xl font-bold text-gray-800">Your Connected Groups</h2>
-                    <span id="group-count" class="bg-blue-100 text-blue-800 text-sm font-semibold px-3 py-1 rounded-full">Loading...</span>
+            <!-- Right Panel: Member Details -->
+            <div class="w-2/3 bg-gray-50 flex flex-col h-full">
+                <!-- Empty State -->
+                <div id="right-empty" class="flex-1 flex flex-col items-center justify-center text-gray-400">
+                    <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                    <p class="text-lg">Select a group from the left to view members</p>
                 </div>
                 
-                <div id="loading-groups" class="text-center text-gray-500 py-8">Fetching group data from WhatsApp...</div>
-                
-                <!-- Group List Grid -->
-                <div id="groups-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                <!-- Content State -->
+                <div id="right-content" class="hidden flex-col h-full">
+                    <div class="p-4 border-b bg-white shadow-sm flex justify-between items-center z-10">
+                        <div>
+                            <h2 id="selected-group-name" class="text-xl font-bold text-gray-800 line-clamp-1">Group Name</h2>
+                            <p id="selected-group-count" class="text-sm text-gray-500">0 Participants</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyCurrentMembers()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm flex items-center gap-2 transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                                Copy Numbers
+                            </button>
+                            <a id="download-csv-btn" href="#" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm flex items-center gap-2 transition-colors" download>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                CSV
+                            </a>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <ul id="members-list" class="divide-y divide-gray-100">
+                                <!-- Members go here -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <script>
             let isConnected = false;
+            let currentMembers = [];
 
             // Polling loop to check WhatsApp connection status
             async function checkStatus() {
@@ -140,22 +181,22 @@ app.get('/', (req, res) => {
                     const qrContainer = document.getElementById('qr-container');
                     const qrImage = document.getElementById('qr-image');
                     const authSection = document.getElementById('auth-section');
-                    const groupsSection = document.getElementById('groups-section');
+                    const mainUi = document.getElementById('main-ui');
 
                     if (data.status === 'DISCONNECTED' && data.qr) {
                         statusText.innerText = 'Status: Waiting for QR Scan';
                         statusText.className = 'text-lg font-semibold text-yellow-600 mb-4 bg-yellow-50 px-4 py-2 rounded-full inline-block';
                         qrImage.src = data.qr;
                         qrContainer.classList.remove('hidden');
-                        groupsSection.classList.add('hidden');
                         setTimeout(checkStatus, 3000); // check again in 3s
                     } else if (data.status === 'CONNECTED') {
                         if (!isConnected) {
                             isConnected = true;
-                            qrContainer.classList.add('hidden');
-                            authSection.innerHTML = '<div class="p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg font-semibold flex items-center justify-center gap-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Successfully Connected!</div>';
-                            groupsSection.classList.remove('hidden');
-                            loadGroups(); // Fetch groups once connected
+                            // Hide Auth completely, show Main UI, remove flex center from body
+                            document.body.classList.remove('items-center', 'justify-center');
+                            authSection.classList.add('hidden');
+                            mainUi.classList.remove('hidden');
+                            loadGroups();
                         }
                     } else {
                         statusText.innerText = 'Status: Initializing / Connecting...';
@@ -166,40 +207,118 @@ app.get('/', (req, res) => {
                 }
             }
 
-            // Fetch and render groups
+            // Fetch and render groups on the left side
             async function loadGroups() {
+                const loading = document.getElementById('loading-groups');
+                loading.classList.remove('hidden');
+                
                 try {
                     const res = await fetch('/api/groups');
                     const groups = await res.json();
                     
-                    document.getElementById('loading-groups').classList.add('hidden');
-                    document.getElementById('group-count').innerText = groups.length + ' Groups found';
+                    loading.classList.add('hidden');
+                    document.getElementById('group-count').innerText = groups.length;
                     
                     const list = document.getElementById('groups-list');
                     list.innerHTML = '';
 
                     groups.forEach(group => {
                         const item = document.createElement('div');
-                        item.className = 'flex flex-col justify-between p-5 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow';
+                        item.className = 'p-3 bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow hover:border-green-300 cursor-pointer transition-all';
+                        item.onclick = () => selectGroup(group.id, group.subject || 'Unknown Group');
+                        
                         item.innerHTML = \`
-                            <div class="mb-4">
-                                <h3 class="font-bold text-lg text-gray-800 line-clamp-1" title="\${group.subject}">\${group.subject || 'Unknown Group'}</h3>
-                                <div class="text-sm text-gray-500 mt-1 flex items-center gap-1">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                                    \${group.size} Participants
-                                </div>
+                            <h3 class="font-bold text-gray-800 line-clamp-1" title="\${group.subject}">\${group.subject || 'Unknown Group'}</h3>
+                            <div class="text-sm text-gray-500 mt-1 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                \${group.size} Participants
                             </div>
-                            <a href="/api/groups/\${group.id}/csv" class="w-full text-center px-4 py-2 bg-green-600 text-white font-medium rounded-lg shadow-sm hover:bg-green-700 transition-colors flex items-center justify-center gap-2" download>
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                                Download CSV
-                            </a>
                         \`;
                         list.appendChild(item);
                     });
                 } catch (e) {
-                    document.getElementById('loading-groups').innerText = 'Failed to load groups. See console.';
+                    loading.innerText = 'Failed to load groups.';
                     console.error('Error fetching groups:', e);
                 }
+            }
+
+            // Load members when a group is clicked
+            async function selectGroup(groupId, groupName) {
+                document.getElementById('right-empty').classList.add('hidden');
+                document.getElementById('right-content').classList.remove('hidden');
+                
+                document.getElementById('selected-group-name').innerText = groupName;
+                document.getElementById('selected-group-count').innerText = 'Loading members...';
+                document.getElementById('members-list').innerHTML = '<li class="p-6 text-center text-gray-500">Fetching participants from WhatsApp...</li>';
+                
+                // Update CSV Download Link
+                document.getElementById('download-csv-btn').href = '/api/groups/' + groupId + '/csv';
+
+                try {
+                    const res = await fetch('/api/groups/' + groupId + '/members');
+                    const members = await res.json();
+                    
+                    currentMembers = members;
+                    document.getElementById('selected-group-count').innerText = members.length + ' Participants';
+                    
+                    const list = document.getElementById('members-list');
+                    list.innerHTML = '';
+                    
+                    members.forEach(member => {
+                        const li = document.createElement('li');
+                        li.className = 'p-4 flex justify-between items-center hover:bg-gray-50 transition-colors';
+                        li.innerHTML = \`
+                            <span class="font-medium text-gray-800 select-all">+\${member.id}</span>
+                            \${member.isAdmin ? '<span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full">Admin</span>' : ''}
+                        \`;
+                        list.appendChild(li);
+                    });
+                } catch (e) {
+                    document.getElementById('members-list').innerHTML = '<li class="p-6 text-center text-red-500">Failed to fetch members.</li>';
+                }
+            }
+
+            // Copy all currently displayed members to clipboard
+            function copyCurrentMembers() {
+                if (currentMembers.length === 0) return;
+                
+                const numbers = currentMembers.map(m => m.id).join('\\n');
+                
+                // iFrame safe copy technique
+                const textarea = document.createElement('textarea');
+                textarea.value = numbers;
+                textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+                document.body.appendChild(textarea);
+                textarea.select();
+                
+                try {
+                    document.execCommand('copy');
+                    showToast('Copied ' + currentMembers.length + ' numbers to clipboard!');
+                } catch (err) {
+                    showToast('Failed to copy. Please use the CSV button.', true);
+                }
+                
+                document.body.removeChild(textarea);
+            }
+
+            // Display Toast notification
+            function showToast(message, isError = false) {
+                const toast = document.getElementById('toast');
+                toast.innerText = message;
+                
+                if (isError) {
+                    toast.classList.remove('bg-green-600');
+                    toast.classList.add('bg-red-600');
+                } else {
+                    toast.classList.remove('bg-red-600');
+                    toast.classList.add('bg-green-600');
+                }
+
+                toast.classList.remove('translate-x-full');
+                
+                setTimeout(() => {
+                    toast.classList.add('translate-x-full');
+                }, 3000);
             }
 
             // Start polling on load
@@ -262,7 +381,9 @@ app.get('/api/groups/:id/csv', async (req, res) => {
             // Extract pure phone number from JID (e.g., "919999999999@s.whatsapp.net" -> "919999999999")
             const number = participant.id.split('@')[0];
             const isAdmin = (participant.admin === 'admin' || participant.admin === 'superadmin') ? 'Yes' : 'No';
-            csvContent += `${number},${isAdmin}\n`;
+            
+            // Added a single quote (') so Excel reads it as simple text and doesn't convert to E+13
+            csvContent += `'${number},${isAdmin}\n`;
         }
 
         // Clean group name for a safe filename
@@ -277,6 +398,28 @@ app.get('/api/groups/:id/csv', async (req, res) => {
     } catch (err) {
         console.error("Error generating CSV:", err);
         res.status(500).send("Error generating CSV: " + err.message);
+    }
+});
+
+// 5. Get members as JSON for the UI Right Panel
+app.get('/api/groups/:id/members', async (req, res) => {
+    if (sessionState.status !== 'CONNECTED' || !sessionState.sock) {
+        return res.status(400).json({ error: 'WhatsApp is not connected yet.' });
+    }
+
+    try {
+        const groupId = req.params.id;
+        const groupMeta = await sessionState.sock.groupMetadata(groupId);
+        
+        const members = groupMeta.participants.map(p => ({
+            id: p.id.split('@')[0],
+            isAdmin: (p.admin === 'admin' || p.admin === 'superadmin')
+        }));
+        
+        res.json(members);
+    } catch (err) {
+        console.error("Error fetching members API:", err);
+        res.status(500).json({ error: err.message });
     }
 });
 
